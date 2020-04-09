@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"flag"
 	"log"
 	"net"
 	"os"
@@ -15,41 +14,8 @@ import (
 	"golang.org/x/net/ipv4"
 )
 
-var (
-	// Name will be the name of the tunnel
-	Name = flag.String("inf", "tun0", "Interface name")
-
-	// IPAddr will be the IP address added to the interface
-	IPAddr = flag.String("ip", "192.168.9.1/24", "IP Address range to assign")
-
-	// RemoteAddr will be the remote instance address
-	RemoteAddr = flag.String("remote", "", "Remote Address")
-
-	// LocalAddr will be the local address. This will be present if this works as a server.
-	LocalAddr = flag.String("local", "", "Local address to listen on")
-
-	// ShouldStartServer will be true if local address is set
-	ShouldStartServer = false
-
-	rAddr *net.UDPAddr
-)
-
 func init() {
-	flag.Parse()
-
-	// If remote address is present, local address shouldn't be present
-	if *LocalAddr != "" {
-		ShouldStartServer = true
-	}
-
-	if *RemoteAddr != "" {
-		addr, err := net.ResolveUDPAddr("udp", *RemoteAddr)
-		if err != nil {
-			log.Fatalf("error while resolving remote address: %v", err)
-		}
-
-		rAddr = addr
-	}
+	initConfig()
 }
 
 func main() {
@@ -69,7 +35,7 @@ func main() {
 	config := water.Config{
 		DeviceType: water.TUN,
 	}
-	config.Name = *Name
+	config.Name = cfg.Tunnel.InfName
 
 	// Create a tunnel
 	inf, err := water.New(config)
@@ -78,11 +44,11 @@ func main() {
 	}
 	defer inf.Close()
 
-	link, err := netlink.LinkByName(*Name)
+	link, err := netlink.LinkByName(cfg.Tunnel.InfName)
 	if err != nil {
 		log.Fatalf("error while getting link: %v", err)
 	}
-	addr, _ := netlink.ParseAddr(*IPAddr)
+	addr, _ := netlink.ParseAddr(cfg.Tunnel.IPRange)
 	if err != nil {
 		log.Fatalf("error parsing ip address: %v", err)
 	}
@@ -105,7 +71,7 @@ func main() {
 	log.Printf("tunnel created with name: %s", inf.Name())
 
 	// Start a goroutine to listen to UDP packets
-	if ShouldStartServer {
+	if shouldStartServer() {
 		startServer(ctx, inf)
 	} else {
 		log.Printf("Starting a client")
@@ -117,9 +83,18 @@ func main() {
 }
 
 func startServer(ctx context.Context, inf *water.Interface) {
-	s, err := NewServer(*LocalAddr)
+	s, err := NewServer(cfg.Peers.LocalAddress)
 	if err != nil {
 		log.Fatalf("error while starting UDP server: %v", err)
+	}
+
+	var rAddr *net.UDPAddr
+
+	if cfg.Peers.RemoteAddress != "" {
+		rAddr, err = net.ResolveUDPAddr("udp", cfg.Peers.RemoteAddress)
+		if err != nil {
+			log.Fatalf("invalid remote address, error: %v", err)
+		}
 	}
 
 	// Read from the UDP Socket
@@ -169,7 +144,7 @@ func startServer(ctx context.Context, inf *water.Interface) {
 			addr, ok := s.GetClientAddr(hdr.Dst.String())
 			if !ok {
 				// If remote address exists, send a packet there.
-				if *RemoteAddr != "" {
+				if cfg.Peers.RemoteAddress != "" {
 					_, err = s.Write(ctx, rAddr, packet[:n])
 					if err != nil {
 						log.Printf("error sending data to remote address: %v", err)
@@ -188,7 +163,7 @@ func startServer(ctx context.Context, inf *water.Interface) {
 }
 
 func startClient(ctx context.Context, inf *water.Interface) {
-	c, err := NewClient(*RemoteAddr)
+	c, err := NewClient(cfg.Peers.RemoteAddress)
 	if err != nil {
 		log.Fatalf("error starting the client: %v", err)
 	}
@@ -229,4 +204,12 @@ func startClient(ctx context.Context, inf *water.Interface) {
 			}
 		}
 	}()
+}
+
+func shouldStartServer() bool {
+	if cfg.Peers.LocalAddress != "" {
+		return true
+	}
+
+	return false
 }
