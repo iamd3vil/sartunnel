@@ -9,19 +9,21 @@ import (
 )
 
 type cfgTunnel struct {
-	InfName string `koanf:"interface"`
-	IPRange string `koanf:"ip_range"`
+	InfName      string `koanf:"interface"`
+	IPRange      string `koanf:"ip_range"`
+	PrivateKey   string `koanf:"private_key"`
+	LocalAddress string `koanf:"local_address"`
 }
 
-type cfgPeers struct {
-	LocalAddress  string `koanf:"local_address"`
+type cfgPeer struct {
 	RemoteAddress string `koanf:"remote_address"`
+	PublicKey     string `koanf:"public_key"`
 }
 
 // Config contains all config for running sartunnel
 type Config struct {
 	Tunnel cfgTunnel
-	Peers  cfgPeers
+	Peer   cfgPeer
 }
 
 var (
@@ -35,5 +37,5 @@ func initConfig() {
 	}
 
 	k.Unmarshal("tunnel", &cfg.Tunnel)
-	k.Unmarshal("peers", &cfg.Peers)
+	k.Unmarshal("peer", &cfg.Peer)
 }
