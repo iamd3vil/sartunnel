@@ -39,6 +39,6 @@ public_key = "YZyw1eskwc6r61c5CjRf8HEjcZCc6DF+LGm8bzB7OCs="
 
 ## Crypto
 
-ECDH is used for the key exchange and XSalsa20 & Poly1305 is used for the authenticated encryption. 
+ECDH is used for the key exchange and XChaCha20 & Poly1305 AEAD is used for the authenticated encryption. 
 
 > Note: There is no perfect forward secrecy. The key is not rotated while the session is going on. This is not implemented to keep it simple.

@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"crypto"
+	"crypto/cipher"
 	"log"
 	"net"
 
 	"github.com/aead/ecdh"
 	"github.com/dolmen-go/contextio"
 	"github.com/songgao/water"
+	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/net/ipv4"
 )
 
@@ -21,6 +23,7 @@ type Env struct {
 	localPrivKey crypto.PrivateKey
 	peerPubKey   crypto.PublicKey
 	key          []byte
+	aead         cipher.AEAD
 }
 
 // NewEnv returns a Env instance with a curve intialized
@@ -43,12 +46,18 @@ func NewEnv(inf *water.Interface) (*Env, error) {
 	// Compute secret
 	key := curve.ComputeSecret(localPrivKey, peerPublicKey)
 
+	aead, err := chacha20poly1305.NewX(key)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Env{
 		inf:          inf,
 		curve:        ecdh.X25519(),
 		localPrivKey: localPrivKey,
 		peerPubKey:   peerPublicKey,
 		key:          key,
+		aead:         aead,
 	}, nil
 }
 
@@ -90,7 +99,7 @@ func (env *Env) startServer(ctx context.Context) {
 
 			// Decrypt the packet
 			if hdr.MessageType == MTypeData {
-				dec, err := Decrypt(env.key, data)
+				dec, err := env.Decrypt(data)
 				if err != nil {
 					log.Printf("error while decrypting packet: %v", err)
 					continue
@@ -134,7 +143,7 @@ func (env *Env) startServer(ctx context.Context) {
 			}
 
 			// Write to socket
-			encrypted, err := Encrypt(env.key, packet[:n])
+			encrypted, err := env.Encrypt(packet[:n])
 			if err != nil {
 				log.Printf("error while encrypting packets")
 				continue
@@ -193,7 +202,7 @@ func (env *Env) startClient(ctx context.Context) {
 
 			// Decrypt the packet
 			if hdr.MessageType == MTypeData {
-				dec, err := Decrypt(env.key, data)
+				dec, err := env.Decrypt(data)
 				if err != nil {
 					log.Printf("error while decrypting packet: %v", err)
 					continue
@@ -218,7 +227,7 @@ func (env *Env) startClient(ctx context.Context) {
 			}
 
 			// Write to socket
-			encrypted, err := Encrypt(env.key, packet[:n])
+			encrypted, err := env.Encrypt(packet[:n])
 			if err != nil {
 				log.Printf("error while encrypting packets")
 				continue

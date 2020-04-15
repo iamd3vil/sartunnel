@@ -9,7 +9,6 @@ import (
 	"io"
 
 	"github.com/aead/ecdh"
-	"golang.org/x/crypto/nacl/secretbox"
 )
 
 // GenerateKeys generates EC-Curve22591 private and public keys for the given curve
@@ -51,38 +50,27 @@ func DecodePublicKey(pubKey string) (crypto.PublicKey, error) {
 
 // Encrypt encrypts the given data with the given key and returns it.
 // We will use XSalsa20 and Poly1305 to encrypt and authenticate messages
-func Encrypt(key []byte, data []byte) ([]byte, error) {
-	// Encrypt the marshalled data using the key.
-	var (
-		k [32]byte
-	)
-	copy(k[:], key)
+func (env *Env) Encrypt(data []byte) ([]byte, error) {
+	// Allocate a nonce with the NonceSize length and capacity of the whole encrypted data
+	nonce := make([]byte, env.aead.NonceSize(), env.aead.NonceSize()+len(data)+env.aead.Overhead())
 
-	// We can use secretbox which uses XSalsa20 and Poly1305 to encrypt and authenticate messages
+	// We can use secretbox which uses XChaCha20-Poly1305 AEAD to encrypt and authenticate messages
 	// Generate random nonce
-	var nonce [24]byte
-	if _, err := io.ReadFull(rand.Reader, nonce[:]); err != nil {
-		return []byte{}, fmt.Errorf("error while encrypting data: %v", err)
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return nil, fmt.Errorf("error while encrypting data: %v", err)
 	}
 
-	// Seal using secretbox
-	return secretbox.Seal(nonce[:], data, &nonce, &k), nil
+	// Seal using AEAD.
+	// We are adding our encrypted data to nonce
+	return env.aead.Seal(nonce, nonce, data, nil), nil
 }
 
 // Decrypt the given data with the given key
 // We will use XSalsa20 and Poly1305 to decrypt and authenticate messages
-func Decrypt(key []byte, encData []byte) ([]byte, error) {
-	var (
-		decryptNonce [24]byte
-		k            [32]byte
-	)
-	copy(decryptNonce[:], encData[:24])
-	copy(k[:], key[:])
-
-	decrypted, ok := secretbox.Open(nil, encData[24:], &decryptNonce, &k)
-	if !ok {
-		return nil, errors.New("invalid packet")
+func (env *Env) Decrypt(encData []byte) ([]byte, error) {
+	if len(encData) < env.aead.NonceSize() {
+		return nil, errors.New("invalid ciphertext")
 	}
 
-	return decrypted, nil
+	return env.aead.Open(nil, encData[:env.aead.NonceSize()], encData[env.aead.NonceSize():], nil)
 }
